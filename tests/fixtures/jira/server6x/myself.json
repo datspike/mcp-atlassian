@@ -1,0 +1,15 @@
+{
+  "self": "https://jira-server.example.com/rest/api/2/user?username=admin",
+  "name": "admin",
+  "key": "admin",
+  "emailAddress": "admin@example.com",
+  "displayName": "Administrator",
+  "active": true,
+  "timeZone": "America/New_York",
+  "avatarUrls": {
+    "16x16": "https://jira-server.example.com/secure/useravatar?size=xsmall&avatarId=10122",
+    "24x24": "https://jira-server.example.com/secure/useravatar?size=small&avatarId=10122",
+    "32x32": "https://jira-server.example.com/secure/useravatar?size=medium&avatarId=10122",
+    "48x48": "https://jira-server.example.com/secure/useravatar?size=large&avatarId=10122"
+  }
+}

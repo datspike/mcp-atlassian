@@ -55,6 +55,7 @@ def test_init_with_basic_auth():
             client_cert=None,
             client_key=None,
             client_key_password=None,
+            ca_file=None,
         )
 
         assert client.config == config
@@ -96,6 +97,7 @@ def test_init_with_token_auth():
             client_cert=None,
             client_key=None,
             client_key_password=None,
+            ca_file=None,
         )
 
         assert client.config == config

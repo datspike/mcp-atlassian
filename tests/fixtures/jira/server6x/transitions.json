@@ -1,0 +1,54 @@
+{
+  "expand": "transitions",
+  "transitions": [
+    {
+      "id": "11",
+      "name": "Start Progress",
+      "to": {
+        "self": "https://jira-server.example.com/rest/api/2/status/10000",
+        "description": "This issue is currently being worked on.",
+        "iconUrl": "https://jira-server.example.com/images/icons/statuses/inprogress.png",
+        "name": "In Progress",
+        "id": "10000",
+        "statusCategory": {
+          "self": "https://jira-server.example.com/rest/api/2/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "In Progress"
+        }
+      },
+      "fields": {}
+    },
+    {
+      "id": "21",
+      "name": "Resolve Issue",
+      "to": {
+        "self": "https://jira-server.example.com/rest/api/2/status/10001",
+        "description": "A resolution has been taken, and it is awaiting verification by reporter. From here issues are either reopened, or are closed.",
+        "iconUrl": "https://jira-server.example.com/images/icons/statuses/resolved.png",
+        "name": "Resolved",
+        "id": "10001",
+        "statusCategory": {
+          "self": "https://jira-server.example.com/rest/api/2/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "Done"
+        }
+      },
+      "fields": {
+        "resolution": {
+          "required": true,
+          "schema": {
+            "type": "resolution",
+            "system": "resolution"
+          },
+          "name": "Resolution",
+          "hasDefaultValue": false,
+          "operations": ["set"]
+        }
+      }
+    }
+  ]
+}

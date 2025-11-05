@@ -1,0 +1,40 @@
+{
+  "expand": "schema,names",
+  "startAt": 0,
+  "maxResults": 50,
+  "total": 1,
+  "issues": [
+    {
+      "expand": "operations,editmeta,changelog",
+      "id": "10000",
+      "self": "https://jira-server.example.com/rest/api/2/issue/10000",
+      "key": "PROJ-123",
+      "fields": {
+        "summary": "Test Issue",
+        "assignee": {
+          "self": "https://jira-server.example.com/rest/api/2/user?username=admin",
+          "name": "admin",
+          "key": "admin",
+          "displayName": "Administrator",
+          "active": true
+        },
+        "reporter": {
+          "self": "https://jira-server.example.com/rest/api/2/user?username=admin",
+          "name": "admin",
+          "key": "admin",
+          "displayName": "Administrator",
+          "active": true
+        },
+        "status": {
+          "self": "https://jira-server.example.com/rest/api/2/status/10000",
+          "description": "This issue is currently being worked on.",
+          "iconUrl": "https://jira-server.example.com/images/icons/statuses/inprogress.png",
+          "name": "In Progress",
+          "id": "10000"
+        },
+        "created": "2024-01-15T10:00:00.000+0000",
+        "updated": "2024-01-16T11:00:00.000+0000"
+      }
+    }
+  ]
+}

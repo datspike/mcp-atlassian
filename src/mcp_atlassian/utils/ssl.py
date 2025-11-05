@@ -1,6 +1,7 @@
 """SSL-related utility functions for MCP Atlassian."""
 
 import logging
+import os
 import ssl
 from typing import Any
 from urllib.parse import urlparse
@@ -77,6 +78,7 @@ def configure_ssl_verification(
     client_cert: str | None = None,
     client_key: str | None = None,
     client_key_password: str | None = None,
+    ca_file: str | None = None,
 ) -> None:
     """Configure SSL verification and client certificates for a specific service.
 
@@ -87,6 +89,10 @@ def configure_ssl_verification(
     If client certificate paths are provided, they will be configured for
     mutual TLS authentication.
 
+    If a CA file is provided, it will be used to verify SSL certificates.
+    The CA file can be specified via environment variable (e.g., JIRA_TLS_INSECURE)
+    or passed directly as a parameter.
+
     Args:
         service_name: Name of the service for logging (e.g., "Confluence", "Jira")
         url: The base URL of the service
@@ -95,6 +101,7 @@ def configure_ssl_verification(
         client_cert: Path to client certificate file (.pem)
         client_key: Path to client private key file (.pem)
         client_key_password: Password for encrypted private key (optional)
+        ca_file: Optional path to CA bundle file for SSL verification
     """
     # Configure client certificate if provided (must be actual string paths)
     if isinstance(client_cert, str) and isinstance(client_key, str):
@@ -113,11 +120,18 @@ def configure_ssl_verification(
             f"with cert: {client_cert}"
         )
 
-    if not ssl_verify:
+    # Check for TLS insecure flag (default: false/secure)
+    tls_insecure_env = os.getenv(
+        f"{service_name.upper()}_TLS_INSECURE", "false"
+    ).lower()
+    if tls_insecure_env in ("true", "1", "yes"):
+        ssl_verify = False
         logger.warning(
-            f"{service_name} SSL verification disabled. This is insecure and should only be used in testing environments."
+            f"{service_name} TLS verification disabled via {service_name.upper()}_TLS_INSECURE. "
+            "This is insecure and should only be used in testing environments."
         )
 
+    if not ssl_verify:
         # Get the domain from the configured URL
         domain = urlparse(url).netloc
 
@@ -125,3 +139,13 @@ def configure_ssl_verification(
         adapter = SSLIgnoreAdapter()
         session.mount(f"https://{domain}", adapter)
         session.mount(f"http://{domain}", adapter)
+    elif ca_file:
+        # Use custom CA bundle if provided
+        if not os.path.exists(ca_file):
+            logger.warning(
+                f"CA file specified for {service_name} does not exist: {ca_file}. "
+                "Falling back to default SSL verification."
+            )
+        else:
+            logger.info(f"Using custom CA bundle for {service_name}: {ca_file}")
+            session.verify = ca_file

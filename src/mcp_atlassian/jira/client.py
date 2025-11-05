@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from atlassian import Jira
 from requests import Session
+from requests.exceptions import HTTPError
 
 from mcp_atlassian.exceptions import MCPAtlassianAuthenticationError
 from mcp_atlassian.preprocessing import JiraPreprocessor
@@ -18,6 +19,7 @@ from mcp_atlassian.utils.oauth import configure_oauth_session
 from mcp_atlassian.utils.ssl import configure_ssl_verification
 
 from .config import JiraConfig
+from .http_client import configure_api_version
 
 # Configure logging
 logger = logging.getLogger("mcp-jira")
@@ -28,6 +30,7 @@ class JiraClient:
 
     _field_ids_cache: list[dict[str, Any]] | None
     _current_user_account_id: str | None
+    _cookie_session: str | None  # JSESSIONID for cookie-based auth
 
     config: JiraConfig
     preprocessor: JiraPreprocessor
@@ -84,16 +87,19 @@ class JiraClient:
                 verify_ssl=self.config.ssl_verify,
             )
         else:  # basic auth
+            # Determine password: use jira_password if available (Server 6.x), otherwise use api_token
+            password = self.config.jira_password or self.config.api_token
+
             logger.debug(
                 f"Initializing Jira client with Basic auth. "
                 f"URL: {self.config.url}, Username: {self.config.username}, "
                 f"API Token present: {bool(self.config.api_token)}, "
-                f"Is Cloud: {self.config.is_cloud}"
+                f"Is Cloud: {self.config.is_cloud}, Mode: {self.config.jira_mode}"
             )
             self.jira = Jira(
                 url=self.config.url,
                 username=self.config.username,
-                password=self.config.api_token,
+                password=password,
                 cloud=self.config.is_cloud,
                 verify_ssl=self.config.ssl_verify,
             )
@@ -111,7 +117,16 @@ class JiraClient:
             client_cert=self.config.client_cert,
             client_key=self.config.client_key,
             client_key_password=self.config.client_key_password,
+            ca_file=self.config.jira_ca_file,
         )
+
+        # Configure API version for Server 6.x (force v2 endpoints)
+        if self.config.jira_mode == "server_6x":
+            configure_api_version(
+                session=self.jira._session,
+                base_url=self.config.url,
+                force_v2=True,
+            )
 
         # Proxy configuration
         proxies = {}
@@ -142,6 +157,22 @@ class JiraClient:
         )
         self._field_ids_cache = None
         self._current_user_account_id = None
+        self._cookie_session = None
+
+        # Handle cookie-based authentication for Server 6.x
+        if (
+            self.config.jira_mode == "server_6x"
+            and self.config.jira_auth == "cookie"
+            and self.config.username
+            and self.config.jira_password
+        ):
+            try:
+                self._establish_cookie_session()
+            except Exception as e:
+                logger.warning(
+                    f"Failed to establish cookie session: {e}. "
+                    "Falling back to Basic Auth."
+                )
 
         # Test authentication during initialization (in debug mode only)
         if logger.isEnabledFor(logging.DEBUG):
@@ -152,6 +183,97 @@ class JiraClient:
                     "Authentication validation failed during client initialization - "
                     "continuing anyway"
                 )
+
+    def _establish_cookie_session(self) -> None:
+        """Establish a cookie-based session for Server 6.x.
+
+        POSTs to /rest/auth/1/session with username/password and stores JSESSIONID.
+
+        Raises:
+            MCPAtlassianAuthenticationError: If cookie session establishment fails
+        """
+        if not self.config.username or not self.config.jira_password:
+            raise ValueError(
+                "Username and password required for cookie-based authentication"
+            )
+
+        try:
+            import requests
+
+            session_url = f"{self.config.url}/rest/auth/1/session"
+            payload = {
+                "username": self.config.username,
+                "password": self.config.jira_password,
+            }
+
+            logger.debug(f"Establishing cookie session at {session_url}")
+            response = requests.post(
+                session_url,
+                json=payload,
+                verify=self.config.ssl_verify,
+                timeout=30,
+            )
+
+            if response.status_code == 200:
+                # Extract JSESSIONID from cookies
+                cookies = response.cookies
+                if "JSESSIONID" in cookies:
+                    self._cookie_session = cookies["JSESSIONID"]
+                    # Set cookie in the Jira session
+                    self.jira._session.cookies.set("JSESSIONID", self._cookie_session)
+                    logger.info("Cookie session established successfully")
+                else:
+                    logger.warning("Cookie session response did not include JSESSIONID")
+            else:
+                error_msg = (
+                    f"Failed to establish cookie session: "
+                    f"HTTP {response.status_code}: {response.text[:200]}"
+                )
+                logger.error(error_msg)
+                raise MCPAtlassianAuthenticationError(error_msg)
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Network error establishing cookie session: {e}"
+            logger.error(error_msg)
+            raise MCPAtlassianAuthenticationError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error establishing cookie session: {e}"
+            logger.error(error_msg)
+            raise MCPAtlassianAuthenticationError(error_msg) from e
+
+    def _refresh_cookie_session(self) -> None:
+        """Refresh cookie session on 401 error.
+
+        Attempts to re-establish the cookie session once.
+        """
+        if self._cookie_session and self.config.jira_auth == "cookie":
+            logger.info("Refreshing cookie session after 401 error")
+            try:
+                self._establish_cookie_session()
+            except Exception as e:
+                logger.error(f"Failed to refresh cookie session: {e}")
+                raise
+
+    def _logout(self) -> None:
+        """Logout from cookie-based session.
+
+        DELETE /rest/auth/1/session to invalidate JSESSIONID.
+        """
+        if self._cookie_session and self.config.jira_auth == "cookie":
+            try:
+                import requests
+
+                session_url = f"{self.config.url}/rest/auth/1/session"
+                logger.debug(f"Logging out from cookie session at {session_url}")
+                requests.delete(
+                    session_url,
+                    cookies={"JSESSIONID": self._cookie_session},
+                    verify=self.config.ssl_verify,
+                    timeout=30,
+                )
+                self._cookie_session = None
+                logger.info("Cookie session logged out successfully")
+            except Exception as e:
+                logger.warning(f"Error during cookie session logout: {e}")
 
     def _validate_authentication(self) -> None:
         """Validate authentication by making a simple API call."""
@@ -172,6 +294,27 @@ class JiraClient:
                     "this may indicate an issue"
                 )
         except Exception as e:
+            # Try to refresh cookie session on 401
+            if (
+                isinstance(e, HTTPError)
+                and hasattr(e, "response")
+                and e.response is not None
+                and e.response.status_code == 401
+                and self.config.jira_auth == "cookie"
+            ):
+                try:
+                    self._refresh_cookie_session()
+                    # Retry authentication
+                    current_user = self.jira.myself()
+                    if current_user:
+                        logger.info("Authentication successful after cookie refresh")
+                        return
+                except Exception as refresh_error:
+                    logger.debug(
+                        f"Cookie refresh failed: {refresh_error}, "
+                        "falling through to raise original error"
+                    )  # Fall through to raise original error
+
             error_msg = f"Jira authentication validation failed: {e}"
             logger.error(error_msg)
             logger.debug(

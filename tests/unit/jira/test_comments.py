@@ -130,8 +130,8 @@ class TestCommentsMixin:
         assert result[1]["author"] == "Unknown"  # Should default to Unknown
 
         assert (
-            result[2]["author"] == "Unknown"
-        )  # Should use Unknown when only name is available
+            result[2]["author"] == "user123"
+        )  # Should use name when displayName is not available
 
     def test_get_issue_comments_with_empty_response(self, comments_mixin):
         """Test get_issue_comments with an empty response."""

@@ -114,13 +114,29 @@ def get_available_services(
                 jira_is_setup = True
                 logger.info("Using Jira Cloud Basic Authentication (API Token)")
         else:  # Server/Data Center non-OAuth
-            if os.getenv("JIRA_PERSONAL_TOKEN") or (
-                os.getenv("JIRA_USERNAME") and os.getenv("JIRA_API_TOKEN")
-            ):
-                jira_is_setup = True
-                logger.info(
-                    "Using Jira Server/Data Center authentication (PAT or Basic Auth)"
-                )
+            # Check for Server 6.x mode
+            jira_mode = os.getenv("JIRA_MODE", "cloud").lower()
+            is_server_6x = jira_mode == "server_6x"
+
+            if is_server_6x:
+                # Server 6.x: supports password-based auth
+                if os.getenv("JIRA_USERNAME") and (
+                    os.getenv("JIRA_PASSWORD") or os.getenv("JIRA_API_TOKEN")
+                ):
+                    jira_is_setup = True
+                    auth_method = os.getenv("JIRA_AUTH", "basic")
+                    logger.info(
+                        f"Using Jira Server 6.x authentication (Basic Auth with password, method: {auth_method})"
+                    )
+            else:
+                # Regular Server/DC
+                if os.getenv("JIRA_PERSONAL_TOKEN") or (
+                    os.getenv("JIRA_USERNAME") and os.getenv("JIRA_API_TOKEN")
+                ):
+                    jira_is_setup = True
+                    logger.info(
+                        "Using Jira Server/Data Center authentication (PAT or Basic Auth)"
+                    )
     elif os.getenv("ATLASSIAN_OAUTH_ENABLE", "").lower() in ("true", "1", "yes"):
         jira_is_setup = True
         logger.info(

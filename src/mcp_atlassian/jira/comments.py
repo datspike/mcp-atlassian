@@ -5,6 +5,7 @@ from typing import Any
 
 from ..utils import parse_date
 from .client import JiraClient
+from .mappers import MapperRegistry
 
 logger = logging.getLogger("mcp-jira")
 
@@ -36,14 +37,33 @@ class CommentsMixin(JiraClient):
                 logger.error(msg)
                 raise TypeError(msg)
 
+            # Normalize comments for Server 6.x compatibility
+            raw_comments = comments.get("comments", [])[:limit]
+            is_server_6x = self.config.jira_mode == "server_6x"
+            if is_server_6x:
+                raw_comments = (
+                    MapperRegistry.get_comment_mapper().normalize_comments_list(
+                        raw_comments
+                    )
+                )
+
             processed_comments = []
-            for comment in comments.get("comments", [])[:limit]:
+            for comment in raw_comments:
+                # Get author name - handle both Cloud (accountId) and Server 6.x (name) formats
+                author = comment.get("author", {})
+                author_name = (
+                    author.get("displayName")
+                    or author.get("name")
+                    or author.get("accountId")
+                    or "Unknown"
+                )
+
                 processed_comment = {
                     "id": comment.get("id"),
                     "body": self._clean_text(comment.get("body", "")),
                     "created": str(parse_date(comment.get("created"))),
                     "updated": str(parse_date(comment.get("updated"))),
-                    "author": comment.get("author", {}).get("displayName", "Unknown"),
+                    "author": author_name,
                 }
                 processed_comments.append(processed_comment)
 
@@ -81,11 +101,27 @@ class CommentsMixin(JiraClient):
                 logger.error(msg)
                 raise TypeError(msg)
 
+            # Normalize comment response for Server 6.x compatibility
+            is_server_6x = self.config.jira_mode == "server_6x"
+            if is_server_6x:
+                result = MapperRegistry.get_comment_mapper().normalize_comment_response(
+                    result
+                )
+
+            # Get author name - handle both Cloud (accountId) and Server 6.x (name) formats
+            author = result.get("author", {})
+            author_name = (
+                author.get("displayName")
+                or author.get("name")
+                or author.get("accountId")
+                or "Unknown"
+            )
+
             return {
                 "id": result.get("id"),
                 "body": self._clean_text(result.get("body", "")),
                 "created": str(parse_date(result.get("created"))),
-                "author": result.get("author", {}).get("displayName", "Unknown"),
+                "author": author_name,
             }
         except Exception as e:
             logger.error(f"Error adding comment to issue {issue_key}: {str(e)}")

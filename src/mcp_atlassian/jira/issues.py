@@ -12,6 +12,7 @@ from ..models.jira.common import JiraChangelog
 from ..utils import parse_date
 from .client import JiraClient
 from .constants import DEFAULT_READ_JIRA_FIELDS
+from .mappers import MapperRegistry
 from .protocols import (
     AttachmentsOperationsProto,
     EpicOperationsProto,
@@ -203,6 +204,13 @@ class IssuesMixin(
             # Update the issue data with the fields
             issue["fields"] = fields_data
 
+            # Normalize issue response for Server 6.x compatibility
+            is_server_6x = self.config.jira_mode == "server_6x"
+            if is_server_6x:
+                issue = MapperRegistry.get_issue_mapper().normalize_issue_response(
+                    issue
+                )
+
             # Create and return the JiraIssue model, passing requested_fields
             return JiraIssue.from_api_response(
                 issue,
@@ -276,6 +284,15 @@ class IssuesMixin(
                     raise TypeError(msg)
 
                 comments = response["comments"]
+
+                # Normalize comments for Server 6.x compatibility
+                is_server_6x = self.config.jira_mode == "server_6x"
+                if is_server_6x:
+                    comments = (
+                        MapperRegistry.get_comment_mapper().normalize_comments_list(
+                            comments
+                        )
+                    )
 
                 # Limit comments if needed
                 if comment_limit is not None:
@@ -562,6 +579,9 @@ class IssuesMixin(
                 "issuetype": {"name": actual_issue_type},
             }
 
+            # Normalize fields for Server 6.x before creating issue
+            is_server_6x = self.config.jira_mode == "server_6x"
+
             # Add description if provided (convert from Markdown to Jira format)
             if description:
                 fields["description"] = self._markdown_to_jira(description)
@@ -607,6 +627,14 @@ class IssuesMixin(
 
             # Process **kwargs using the dynamic field map
             self._process_additional_fields(fields, kwargs_copy)
+
+            # Normalize issue request for Server 6.x compatibility
+            if is_server_6x:
+                fields = (
+                    MapperRegistry.get_issue_mapper()
+                    .normalize_issue_request({"fields": fields}, is_server_6x=True)
+                    .get("fields", fields)
+                )
 
             # Create the issue
             response = self.jira.create_issue(fields=fields)
@@ -1053,6 +1081,17 @@ class IssuesMixin(
                     field_kwargs = {key: value}
                     self._process_additional_fields(update_fields, field_kwargs)
 
+            # Normalize update fields for Server 6.x compatibility
+            is_server_6x = self.config.jira_mode == "server_6x"
+            if update_fields and is_server_6x:
+                update_fields = (
+                    MapperRegistry.get_issue_mapper()
+                    .normalize_issue_request(
+                        {"fields": update_fields}, is_server_6x=True
+                    )
+                    .get("fields", update_fields)
+                )
+
             # Update the issue fields
             if update_fields:
                 self.jira.update_issue(
@@ -1080,6 +1119,13 @@ class IssuesMixin(
                 msg = f"Unexpected return value type from `jira.get_issue`: {type(issue_data)}"
                 logger.error(msg)
                 raise TypeError(msg)
+
+            # Normalize issue response for Server 6.x compatibility
+            if is_server_6x:
+                issue_data = MapperRegistry.get_issue_mapper().normalize_issue_response(
+                    issue_data
+                )
+
             issue = JiraIssue.from_api_response(issue_data)
 
             # Add attachment results to the response if available

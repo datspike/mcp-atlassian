@@ -64,8 +64,14 @@ class JiraUser(ApiModel):
             else:
                 logger.debug(f"Unexpected avatar data format: {type(avatars)}")
 
+        # Handle Server 6.x format: use name or key as fallback for accountId
+        account_id = data.get("accountId")
+        if not account_id:
+            # Server 6.x uses name or key instead of accountId
+            account_id = data.get("name") or data.get("key")
+
         return cls(
-            account_id=data.get("accountId"),
+            account_id=account_id,
             display_name=str(data.get("displayName", UNASSIGNED)),
             email=data.get("emailAddress"),
             active=bool(data.get("active", True)),

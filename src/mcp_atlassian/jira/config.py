@@ -13,6 +13,8 @@ from ..utils.oauth import (
 )
 from ..utils.urls import is_atlassian_cloud_url
 
+logger = logging.getLogger("mcp-jira")
+
 
 @dataclass
 class SLAConfig:
@@ -93,6 +95,7 @@ class JiraConfig:
     Handles authentication for Jira Cloud and Server/Data Center:
     - Cloud: username/API token (basic auth) or OAuth 2.0 (3LO)
     - Server/DC: personal access token or basic auth
+    - Server 6.x: Basic auth with password or cookie-based session
     """
 
     url: str  # Base URL for Jira
@@ -115,6 +118,14 @@ class JiraConfig:
     client_key: str | None = None  # Client private key file path (.pem)
     client_key_password: str | None = None  # Password for encrypted private key
     sla_config: SLAConfig | None = None  # Optional SLA configuration
+    jira_mode: Literal["cloud", "server_6x"] = "cloud"  # Jira mode: cloud or server_6x
+    jira_auth: Literal["basic", "cookie"] = (
+        "basic"  # Auth method for server_6x: basic or cookie
+    )
+    jira_password: str | None = (
+        None  # Password for Basic Auth or cookie session (Server 6.x)
+    )
+    jira_ca_file: str | None = None  # Path to CA bundle file for SSL verification
 
     @property
     def is_cloud(self) -> bool:
@@ -123,7 +134,12 @@ class JiraConfig:
         Returns:
             True if this is a cloud instance (atlassian.net), False otherwise.
             Localhost URLs are always considered non-cloud (Server/Data Center).
+            Returns False if jira_mode is explicitly set to "server_6x".
         """
+        # If explicitly set to server_6x mode, always return False
+        if self.jira_mode == "server_6x":
+            return False
+
         # Multi-Cloud OAuth mode: URL might be None, but we use api.atlassian.com
         if (
             self.auth_type == "oauth"
@@ -164,15 +180,20 @@ class JiraConfig:
         username = os.getenv("JIRA_USERNAME")
         api_token = os.getenv("JIRA_API_TOKEN")
         personal_token = os.getenv("JIRA_PERSONAL_TOKEN")
+        jira_password = os.getenv("JIRA_PASSWORD")
 
         # Check for OAuth configuration
         oauth_config = get_oauth_config_from_env()
         auth_type = None
 
+        # Check for Server 6.x mode early (before is_cloud check)
+        jira_mode_raw = os.getenv("JIRA_MODE", "cloud").lower()
+        is_server_6x = jira_mode_raw == "server_6x"
+
         # Use the shared utility function directly
         is_cloud = is_atlassian_cloud_url(url)
 
-        if is_cloud:
+        if is_cloud and not is_server_6x:
             # Cloud: OAuth takes priority, then basic auth
             if oauth_config:
                 auth_type = "oauth"
@@ -181,22 +202,30 @@ class JiraConfig:
             else:
                 error_msg = "Cloud authentication requires JIRA_USERNAME and JIRA_API_TOKEN, or OAuth configuration (set ATLASSIAN_OAUTH_ENABLE=true for user-provided tokens)"
                 raise ValueError(error_msg)
-        else:  # Server/Data Center
-            # Server/DC: PAT takes priority over OAuth (fixes #824)
-            if personal_token:
-                if oauth_config:
-                    logger = logging.getLogger("mcp-atlassian.jira.config")
-                    logger.warning(
-                        "Both PAT and OAuth configured for Server/DC. Using PAT."
-                    )
-                auth_type = "pat"
-            elif oauth_config:
-                auth_type = "oauth"
-            elif username and api_token:
-                auth_type = "basic"
+        else:  # Server/Data Center or Server 6.x
+            if is_server_6x:
+                # Server 6.x: supports password-based auth (basic or cookie)
+                if username and (jira_password or api_token):
+                    auth_type = "basic"
+                else:
+                    error_msg = "Server 6.x authentication requires JIRA_USERNAME and JIRA_PASSWORD (or JIRA_API_TOKEN)"
+                    raise ValueError(error_msg)
             else:
-                error_msg = "Server/Data Center authentication requires JIRA_PERSONAL_TOKEN or JIRA_USERNAME and JIRA_API_TOKEN"
-                raise ValueError(error_msg)
+                # Regular Server/DC: PAT takes priority over OAuth (fixes #824)
+                if personal_token:
+                    if oauth_config:
+                        logger = logging.getLogger("mcp-atlassian.jira.config")
+                        logger.warning(
+                            "Both PAT and OAuth configured for Server/DC. Using PAT."
+                        )
+                    auth_type = "pat"
+                elif oauth_config:
+                    auth_type = "oauth"
+                elif username and api_token:
+                    auth_type = "basic"
+                else:
+                    error_msg = "Server/Data Center authentication requires JIRA_PERSONAL_TOKEN or JIRA_USERNAME and JIRA_API_TOKEN"
+                    raise ValueError(error_msg)
 
         # SSL verification (for Server/DC)
         ssl_verify = is_env_ssl_verify("JIRA_SSL_VERIFY")
@@ -223,6 +252,32 @@ class JiraConfig:
         client_key = os.getenv("JIRA_CLIENT_KEY")
         client_key_password = os.getenv("JIRA_CLIENT_KEY_PASSWORD")
 
+        # Server 6.x mode configuration
+        jira_mode_raw = os.getenv("JIRA_MODE", "cloud").lower()
+        if jira_mode_raw not in ("cloud", "server_6x"):
+            logger.warning(
+                f"Invalid JIRA_MODE value: {jira_mode_raw}, defaulting to 'cloud'"
+            )
+            jira_mode = "cloud"
+        else:
+            jira_mode = jira_mode_raw  # type: ignore[assignment]
+
+        # Auth method for Server 6.x (basic or cookie)
+        jira_auth_raw = os.getenv("JIRA_AUTH", "basic").lower()
+        if jira_auth_raw not in ("basic", "cookie"):
+            logger.warning(
+                f"Invalid JIRA_AUTH value: {jira_auth_raw}, defaulting to 'basic'"
+            )
+            jira_auth = "basic"
+        else:
+            jira_auth = jira_auth_raw  # type: ignore[assignment]
+
+        # Password for Server 6.x (can be used with Basic Auth or cookie session)
+        jira_password = os.getenv("JIRA_PASSWORD")
+
+        # CA file for SSL verification
+        jira_ca_file = os.getenv("JIRA_CA_FILE")
+
         return cls(
             url=url,
             auth_type=auth_type,
@@ -241,6 +296,10 @@ class JiraConfig:
             client_cert=client_cert,
             client_key=client_key,
             client_key_password=client_key_password,
+            jira_mode=jira_mode,  # type: ignore[arg-type]
+            jira_auth=jira_auth,  # type: ignore[arg-type]
+            jira_password=jira_password,
+            jira_ca_file=jira_ca_file,
         )
 
     def is_auth_configured(self) -> bool:
@@ -285,6 +344,10 @@ class JiraConfig:
         elif self.auth_type == "pat":
             return bool(self.personal_token)
         elif self.auth_type == "basic":
+            # For Server 6.x, jira_password can be used instead of api_token
+            if self.jira_mode == "server_6x":
+                return bool(self.username and (self.api_token or self.jira_password))
+            # For Cloud and regular Server/DC, api_token is required
             return bool(self.username and self.api_token)
         logger.warning(
             f"Unknown or unsupported auth_type: {self.auth_type} in JiraConfig"

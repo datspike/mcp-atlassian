@@ -260,3 +260,65 @@ def test_from_env_without_client_cert():
         assert config.client_cert is None
         assert config.client_key is None
         assert config.client_key_password is None
+
+
+def test_is_auth_configured_server_6x_with_password():
+    """Test that is_auth_configured returns True for Server 6.x with jira_password."""
+    # Server 6.x with jira_password (not api_token)
+    config = JiraConfig(
+        url="https://jira.example.com",
+        auth_type="basic",
+        username="test_user",
+        jira_password="test_password",
+        jira_mode="server_6x",
+    )
+    assert config.is_auth_configured() is True
+
+    # Server 6.x with api_token
+    config = JiraConfig(
+        url="https://jira.example.com",
+        auth_type="basic",
+        username="test_user",
+        api_token="test_token",
+        jira_mode="server_6x",
+    )
+    assert config.is_auth_configured() is True
+
+    # Server 6.x with both api_token and jira_password
+    config = JiraConfig(
+        url="https://jira.example.com",
+        auth_type="basic",
+        username="test_user",
+        api_token="test_token",
+        jira_password="test_password",
+        jira_mode="server_6x",
+    )
+    assert config.is_auth_configured() is True
+
+    # Server 6.x with missing credentials
+    config = JiraConfig(
+        url="https://jira.example.com",
+        auth_type="basic",
+        username="test_user",
+        jira_mode="server_6x",
+    )
+    assert config.is_auth_configured() is False
+
+    # Cloud with api_token (standard case)
+    config = JiraConfig(
+        url="https://test.atlassian.net",
+        auth_type="basic",
+        username="test_user",
+        api_token="test_token",
+        jira_mode="cloud",
+    )
+    assert config.is_auth_configured() is True
+
+    # Cloud with missing api_token
+    config = JiraConfig(
+        url="https://test.atlassian.net",
+        auth_type="basic",
+        username="test_user",
+        jira_mode="cloud",
+    )
+    assert config.is_auth_configured() is False

@@ -88,6 +88,21 @@ class SearchMixin(JiraClient, IssueOperationsProto):
             else:
                 fields_param = fields
 
+            # For Server 6.x, remove Cloud-only expand params and ensure proper pagination
+            is_server_6x = self.config.jira_mode == "server_6x"
+            if is_server_6x:
+                # Remove Cloud-only expand params like renderedFields
+                if expand and "renderedFields" in expand:
+                    expand_list = [e.strip() for e in expand.split(",")]
+                    expand_list = [e for e in expand_list if e != "renderedFields"]
+                    expand = ",".join(expand_list) if expand_list else None
+                    logger.debug(
+                        "Removed 'renderedFields' from expand parameter for Server 6.x"
+                    )
+
+                # Ensure limit is within Server 6.x bounds (max 50)
+                limit = min(limit, 50)
+
             if self.config.is_cloud:
                 # Cloud: Use v3 API endpoint POST /rest/api/3/search/jql
                 # The old v2 /rest/api/*/search endpoint is deprecated
