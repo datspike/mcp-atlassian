@@ -72,6 +72,57 @@ class CommentsMixin(JiraClient):
             logger.error(f"Error getting comments for issue {issue_key}: {str(e)}")
             raise Exception(f"Error getting comments: {str(e)}") from e
 
+    def get_comment(self, issue_key: str, comment_id: str) -> dict[str, Any]:
+        """
+        Получить конкретный комментарий задачи по ID.
+
+        Args:
+            issue_key: Ключ задачи (например 'PROJ-123')
+            comment_id: ID комментария
+
+        Returns:
+            Словарь с данными комментария
+
+        Raises:
+            Exception: Если комментарий не найден или ошибка API
+        """
+        try:
+            # Для Server 6.x APIv2Adapter перепишет в /rest/api/2/
+            url = f"/rest/api/3/issue/{issue_key}/comment/{comment_id}"
+            response = self.jira.get(url)
+
+            if not isinstance(response, dict):
+                msg = f"Unexpected return value type: {type(response)}"
+                logger.error(msg)
+                raise TypeError(msg)
+
+            # Normalize for Server 6.x
+            is_server_6x = self.config.jira_mode == "server_6x"
+            if is_server_6x:
+                mapper = MapperRegistry.get_comment_mapper()
+                response = mapper.normalize_comment_response(response)
+
+            author = response.get("author", {})
+            author_name = (
+                author.get("displayName")
+                or author.get("name")
+                or author.get("accountId")
+                or "Unknown"
+            )
+
+            return {
+                "id": response.get("id"),
+                "body": self._clean_text(response.get("body", "")),
+                "created": str(parse_date(response.get("created"))),
+                "updated": str(parse_date(response.get("updated"))),
+                "author": author_name,
+            }
+        except Exception as e:
+            msg = f"Error getting comment {comment_id} for issue {issue_key}: {str(e)}"
+            logger.error(msg)
+            err_msg = f"Error getting comment {comment_id}: {str(e)}"
+            raise Exception(err_msg) from e
+
     def add_comment(
         self, issue_key: str, comment: str, visibility: dict[str, str] | None = None
     ) -> dict[str, Any]:

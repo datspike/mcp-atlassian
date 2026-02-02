@@ -1082,6 +1082,64 @@ async def add_comment(
     return json.dumps(result, indent=2, ensure_ascii=False)
 
 
+@jira_mcp.tool(tags={"jira", "read"})
+async def get_comments(
+    ctx: Context,
+    issue_key: Annotated[str, Field(description="Jira issue key (e.g., 'PROJ-123')")],
+    limit: Annotated[
+        int,
+        Field(description="Maximum number of comments to return (1-100)", ge=1, le=100),
+    ] = 50,
+) -> str:
+    """Get comments for a Jira issue.
+
+    Use this to retrieve the list of comments on an issue.
+    To get a specific comment, use jira_get_comment with the comment_id
+    from the results or from a Jira URL's focusedCommentId parameter.
+
+    Args:
+        ctx: The FastMCP context.
+        issue_key: Jira issue key.
+        limit: Maximum number of comments.
+
+    Returns:
+        JSON string with list of comments.
+    """
+    jira = await get_jira_fetcher(ctx)
+    comments = jira.get_issue_comments(issue_key, limit=limit)
+    result = {"comments": comments, "total": len(comments)}
+    return json.dumps(result, indent=2, ensure_ascii=False)
+
+
+@jira_mcp.tool(tags={"jira", "read"})
+async def get_comment(
+    ctx: Context,
+    issue_key: Annotated[str, Field(description="Jira issue key (e.g., 'PROJ-123')")],
+    comment_id: Annotated[
+        str,
+        Field(
+            description="Comment ID (numeric string). Can be extracted from Jira URL parameter 'focusedCommentId'."
+        ),
+    ],
+) -> str:
+    """Get a specific comment from a Jira issue by comment ID.
+
+    The comment_id can be found in Jira URLs as the 'focusedCommentId' query parameter,
+    e.g., ?focusedCommentId=352921, or from the output of jira_get_comments tool.
+
+    Args:
+        ctx: The FastMCP context.
+        issue_key: Jira issue key.
+        comment_id: The comment ID.
+
+    Returns:
+        JSON string representing the comment.
+    """
+    jira = await get_jira_fetcher(ctx)
+    comment = jira.get_comment(issue_key, comment_id)
+    return json.dumps(comment, indent=2, ensure_ascii=False)
+
+
 @jira_mcp.tool(
     tags={"jira", "write"},
     annotations={"title": "Edit Comment", "destructiveHint": True},

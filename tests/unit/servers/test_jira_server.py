@@ -237,6 +237,19 @@ def mock_jira_fetcher():
 
     mock_get_user_profile.side_effect = side_effect_func
     mock_fetcher.get_user_profile_by_identifier = mock_get_user_profile
+
+    # Configure get_comment
+    def mock_get_comment(issue_key, comment_id):
+        return {
+            "id": comment_id,
+            "body": "Test comment body",
+            "created": "2025-01-15 10:00:00+00:00",
+            "updated": "2025-01-15 10:00:00+00:00",
+            "author": "Test User",
+        }
+
+    mock_fetcher.get_comment.side_effect = mock_get_comment
+
     return mock_fetcher
 
 
@@ -286,6 +299,8 @@ def test_jira_mcp(mock_jira_fetcher, mock_base_jira_config):
         get_agile_boards,
         get_all_projects,
         get_board_issues,
+        get_comment,
+        get_comments,
         get_issue,
         get_link_types,
         get_project_issues,
@@ -326,6 +341,8 @@ def test_jira_mcp(mock_jira_fetcher, mock_base_jira_config):
     jira_sub_mcp.add_tool(update_issue)
     jira_sub_mcp.add_tool(delete_issue)
     jira_sub_mcp.add_tool(add_comment)
+    jira_sub_mcp.add_tool(get_comments)
+    jira_sub_mcp.add_tool(get_comment)
     jira_sub_mcp.add_tool(add_worklog)
     jira_sub_mcp.add_tool(link_to_epic)
     jira_sub_mcp.add_tool(create_issue_link)
@@ -1226,3 +1243,29 @@ async def test_batch_create_versions_empty(jira_client, mock_jira_fetcher):
     )
     content = json.loads(response.content[0].text)
     assert content == []
+
+
+@pytest.mark.anyio
+async def test_jira_get_comments(jira_client, mock_jira_fetcher):
+    """Получение списка комментариев задачи."""
+    response = await jira_client.call_tool(
+        "jira_get_comments",
+        {"issue_key": "TEST-123", "limit": 10},
+    )
+    content = json.loads(response[0].text)
+    assert "comments" in content
+    assert "total" in content
+    mock_jira_fetcher.get_issue_comments.assert_called_once_with("TEST-123", limit=10)
+
+
+@pytest.mark.anyio
+async def test_jira_get_comment(jira_client, mock_jira_fetcher):
+    """Получение конкретного комментария по ID."""
+    response = await jira_client.call_tool(
+        "jira_get_comment",
+        {"issue_key": "TEST-123", "comment_id": "352921"},
+    )
+    content = json.loads(response[0].text)
+    assert content["id"] == "352921"
+    assert content["body"] == "Test comment body"
+    mock_jira_fetcher.get_comment.assert_called_once_with("TEST-123", "352921")

@@ -122,6 +122,35 @@ class TestIssuesMixin:
         assert len(issue.comments) == 1
         assert issue.comments[0].body == "This is a comment"
 
+    def test_get_issue_comments_with_default_fields(self, issues_mixin: IssuesMixin):
+        """Проверка что comment_limit работает при default fields (без 'comment' в ответе API)."""
+        issues_mixin.jira.get_issue.return_value = {
+            "id": "10001",
+            "key": "TEST-123",
+            "fields": {
+                "summary": "Test issue",
+                "status": {"name": "Open"},
+                "issuetype": {"name": "Task"},
+                "created": "2023-01-01T00:00:00.000+0000",
+                "updated": "2023-01-02T00:00:00.000+0000",
+            },
+        }
+        issues_mixin.jira.issue_get_comments.return_value = {
+            "comments": [
+                {
+                    "id": "10001",
+                    "body": "First comment",
+                    "author": {"displayName": "User"},
+                    "created": "2025-01-01T00:00:00.000+0000",
+                    "updated": "2025-01-01T00:00:00.000+0000",
+                },
+            ]
+        }
+        result = issues_mixin.get_issue("TEST-123", comment_limit=10)
+        issues_mixin.jira.issue_get_comments.assert_called_once()
+        assert result.comments is not None
+        assert len(result.comments) == 1
+
     def test_get_issue_with_epic_info(self, issues_mixin: IssuesMixin):
         """Test retrieving issue with epic information."""
         try:

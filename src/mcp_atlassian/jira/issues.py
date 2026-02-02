@@ -163,11 +163,13 @@ class IssuesMixin(
             fields_data = issue.get("fields", {}) or {}
 
             # Get comments if needed
-            if "comment" in fields_data:
-                comment_limit_int = self._normalize_comment_limit(comment_limit)
+            comment_limit_int = self._normalize_comment_limit(comment_limit)
+            if comment_limit_int is None or comment_limit_int > 0:
                 comments = self._get_issue_comments_if_needed(
                     issue_key, comment_limit_int
                 )
+                if "comment" not in fields_data:
+                    fields_data["comment"] = {}
                 # Add comments to the issue data for processing by the model
                 fields_data["comment"]["comments"] = comments
 

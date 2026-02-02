@@ -422,3 +422,40 @@ class TestCommentsMixin:
         assert result == ""
         # The preprocessor should not be called with empty text
         comments_mixin.preprocessor.markdown_to_jira.assert_not_called()
+
+    def test_get_comment_basic(self, comments_mixin):
+        """Получение конкретного комментария по ID."""
+        comments_mixin.jira.get.return_value = {
+            "id": "352921",
+            "body": "Test comment body",
+            "author": {"displayName": "Test User"},
+            "created": "2025-01-15T10:00:00.000+0000",
+            "updated": "2025-01-15T10:00:00.000+0000",
+        }
+        result = comments_mixin.get_comment("TEST-123", "352921")
+        assert result["id"] == "352921"
+        assert result["body"] == "Test comment body"
+        assert result["author"] == "Test User"
+        expected_url = "/rest/api/3/issue/TEST-123/comment/352921"
+        comments_mixin.jira.get.assert_called_once_with(expected_url)
+
+    def test_get_comment_not_found(self, comments_mixin):
+        """Ошибка при несуществующем comment_id."""
+        from requests.exceptions import HTTPError
+
+        comments_mixin.jira.get.side_effect = HTTPError("404 Not Found")
+        with pytest.raises(Exception, match="Error getting comment"):
+            comments_mixin.get_comment("TEST-123", "999999")
+
+    def test_get_comment_server_6x(self, comments_mixin):
+        """Нормализация комментария для Server 6.x."""
+        comments_mixin.config.jira_mode = "server_6x"
+        comments_mixin.jira.get.return_value = {
+            "id": "10001",
+            "body": "Server comment",
+            "author": {"name": "admin", "displayName": "Admin User"},
+            "created": "2025-01-15T10:00:00.000+0300",
+            "updated": "2025-01-15T10:00:00.000+0300",
+        }
+        result = comments_mixin.get_comment("TEST-123", "10001")
+        assert result["id"] == "10001"
